@@ -75,6 +75,7 @@ except (ImportError, ModuleNotFoundError, pkg_resources.DistributionNotFound):
     flash_attn_func_triton = None
 
 
+_is_fa_3 = False
 try:
     # Flash Attention 1.X
     from flash_attn.bert_padding import pad_input, unpad_input
@@ -85,8 +86,14 @@ try:
 
 except (ImportError, ModuleNotFoundError):
     try:
-        # Flash Attention 2.X
-        from flash_attn import flash_attn_func
+        try:
+            # Flash Attention 3 beta
+            from flash_attn_interface import flash_attn_func
+            _is_fa_3 = True
+        except (ImportError, ModuleNotFoundError):
+            # Flash Attention 2.X
+            from flash_attn import flash_attn_func
+
         from flash_attn.flash_attn_interface import flash_attn_varlen_func as flash_attn_unpadded_func
 
         HAVE_FLASH_ATTENTION = True
@@ -1020,13 +1027,22 @@ class CoreAttention(MegatronModule):
 
         if seqlens_q_in_batch == 1 and seqlens_kv_in_batch == 1 and flash_attn_func is not None:
             # [b, sq, np, hn]
-            context_layer = flash_attn_func(
-                query_layer,
-                key_layer,
-                value_layer,
-                dropout_p=self.attention_dropout_p if self.training else 0.0,
-                causal=is_causal,
-            )
+            if _is_fa_3:
+                assert self.attention_dropout_p == 0.0
+                context_layer, _ = flash_attn_func(
+                    query_layer,
+                    key_layer,
+                    value_layer,
+                    causal=is_causal,
+                )
+            else:
+                context_layer = flash_attn_func(
+                    query_layer,
+                    key_layer,
+                    value_layer,
+                    dropout_p=self.attention_dropout_p if self.training else 0.0,
+                    causal=is_causal,
+                )
         else:
             q, indices_q, cu_seqlens_q, max_seqlen_q = unpad_input(query_layer, attention_mask_q)
             k, _, cu_seqlens_k, max_seqlen_k = unpad_input(key_layer, attention_mask_kv)
