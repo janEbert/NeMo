@@ -530,11 +530,17 @@ class MegatronGPTModel(MegatronBaseModel, TextGeneration):
                 lr=self.cfg.optim.lr,
                 weight_decay=self.cfg.optim.get('weight_decay', 0.0),
             )
+
+            decoupled_wd = None
             if is_adam_opt(optim_name):
                 optim_kwargs['eps'] = self.cfg.optim.get('eps', 1e-8)
+                if optim_name in ['fused_adam', 'distributed_fused_adam', 'megatron_fused_adam']:
+                    decoupled_wd = self.cfg.optim.get('adam_w_mode', None)
+
             self._optimizer_param_groups = process_mup_param_groups(
                 optim_name,
                 self._optimizer_param_groups,
+                decoupled_wd=decoupled_wd,
                 **optim_kwargs,
             )
 
